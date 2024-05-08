@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define MAX_N 20
+#define N 20
 
 struct position_t
 {
@@ -30,15 +30,19 @@ struct grid_cell_t
   int group;
 };
 
-pthread_mutex_t lock[MAX_N][MAX_N];
-pthread_cond_t condition[MAX_N][MAX_N];
-struct grid_cell_t occupied[MAX_N][MAX_N][2];
+// Mutexes
+pthread_mutex_t lock[N][N];
 
-void* movement(void* arg);
+// Conditions
+pthread_cond_t condition[N][N];
 
-void enter(struct position_t position, struct grid_cell_t thread);
+struct grid_cell_t occupied[N][N][2];
 
-void leave(struct position_t position, struct grid_cell_t thread);
+void* move(void* arg);
+
+void enter(struct position_t position, int tid, int group);
+
+void leave(struct position_t position, int tid);
 
 void passa_tempo(int tid, int x, int y, int decimos);
 
@@ -49,8 +53,8 @@ int main(int argc, char* argv[])
 
   pthread_t threads[n_threads];
 
-  for (int i = 0; i < MAX_N; i++) {
-    for (int j = 0; j < MAX_N; j++) {
+  for (int i = 0; i < N; i++) {
+    for (int j = 0; j < N; j++) {
       pthread_mutex_init(&lock[i][j], NULL);
       pthread_cond_init(&condition[i][j], NULL);
 
@@ -75,13 +79,13 @@ int main(int argc, char* argv[])
             &thread_data->positions[j].y, &thread_data->positions[j].wait_time);
     }
 
-    pthread_create(&threads[i], NULL, movement, (void*)thread_data);
+    pthread_create(&threads[i], NULL, move, (void*)thread_data);
   }
 
   for (int i = 0; i < n_threads; i++) pthread_join(threads[i], NULL);
 
-  for (int i = 0; i < MAX_N; i++) {
-    for (int j = 0; j < MAX_N; j++) {
+  for (int i = 0; i < N; i++) {
+    for (int j = 0; j < N; j++) {
       pthread_mutex_destroy(&lock[i][j]);
       pthread_cond_destroy(&condition[i][j]);
     }
@@ -90,56 +94,59 @@ int main(int argc, char* argv[])
   return 0;
 }
 
-void* movement(void* arg)
+void* move(void* arg)
 {
   struct thread_t* thread_data = (struct thread_t*)arg;
 
   // first position
+  enter(thread_data->positions[0], thread_data->tid, thread_data->group);
   passa_tempo(thread_data->tid, thread_data->positions[0].x,
               thread_data->positions[0].y, thread_data->positions[0].wait_time);
 
   // next positions
   for (int i = 1; i < thread_data->positions_count; i++) {
-    struct grid_cell_t thread;
-    thread.tid = thread_data->tid;
-    thread.group = thread_data->group;
-
-    enter(thread_data->positions[i], thread);
-    leave(thread_data->positions[i - 1], thread);
+    enter(thread_data->positions[i], thread_data->tid, thread_data->group);
+    leave(thread_data->positions[i - 1], thread_data->tid);
     passa_tempo(thread_data->tid, thread_data->positions[i].x,
                 thread_data->positions[i].y,
                 thread_data->positions[i].wait_time);
   }
 
+  leave(thread_data->positions[thread_data->positions_count - 1],
+        thread_data->tid);
+
+  free(thread_data->positions);
+  free(thread_data);
+
   return (void*)0;
 }
 
-void enter(struct position_t position, struct grid_cell_t thread)
+void enter(struct position_t position, int tid, int group)
 {
   pthread_mutex_lock(&lock[position.x][position.y]);
-  while ((occupied[position.x][position.y][0].group == thread.group ||
-          occupied[position.x][position.y][1].group == thread.group) ||
-         (occupied[position.x][position.y][0].tid != -1 &&
-          occupied[position.x][position.y][1].tid != -1)) {
+  while ((occupied[position.x][position.y][0].tid != -1 &&
+          occupied[position.x][position.y][1].tid != -1) ||
+         (occupied[position.x][position.y][0].group == group ||
+          occupied[position.x][position.y][1].group == group)) {
     pthread_cond_wait(&condition[position.x][position.y],
                       &lock[position.x][position.y]);
   }
 
   for (int k = 0; k < 2; k++) {
     if (occupied[position.x][position.y][k].tid == -1) {
-      occupied[position.x][position.y][k].tid = thread.tid;
-      occupied[position.x][position.y][k].group = thread.group;
+      occupied[position.x][position.y][k].tid = tid;
+      occupied[position.x][position.y][k].group = group;
       break;
     }
   }
   pthread_mutex_unlock(&lock[position.x][position.y]);
 }
 
-void leave(struct position_t position, struct grid_cell_t thread)
+void leave(struct position_t position, int tid)
 {
   pthread_mutex_lock(&lock[position.x][position.y]);
   for (int k = 0; k < 2; k++) {
-    if (occupied[position.x][position.y][k].tid == thread.tid) {
+    if (occupied[position.x][position.y][k].tid == tid) {
       occupied[position.x][position.y][k].tid = -1;
       occupied[position.x][position.y][k].group = -1;
       break;

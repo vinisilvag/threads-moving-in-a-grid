@@ -1,2 +1,7 @@
+all: build
+
 build:
-	gcc src/main.c -Wall -o ex1
+	gcc main.c -Wall -o ex1 -lpthread 
+
+clean:
+	rm -f ex1
