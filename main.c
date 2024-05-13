@@ -87,9 +87,9 @@ void enter(int x, int y, int tid, int group)
   // disponíveis para a posição.
   for (int k = 0; k < 2; k++) {
     if (occupied[x][y][k].available == 1) {
+      occupied[x][y][k].available = 0;
       occupied[x][y][k].tid = tid;
       occupied[x][y][k].group = group;
-      occupied[x][y][k].available = 0;
       break;
     }
   }
@@ -110,9 +110,9 @@ void leave(int x, int y, int tid)
   // disponível novamente.
   for (int k = 0; k < 2; k++) {
     if (occupied[x][y][k].available == 0 && occupied[x][y][k].tid == tid) {
+      occupied[x][y][k].available = 1;
       occupied[x][y][k].tid = -1;
       occupied[x][y][k].group = -1;
-      occupied[x][y][k].available = 1;
       break;
     }
   }
